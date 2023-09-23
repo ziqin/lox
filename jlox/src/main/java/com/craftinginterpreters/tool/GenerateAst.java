@@ -22,9 +22,10 @@ public class GenerateAst {
                 "Variable : Token name"
         ));
         defineAst(outputDir, "Stmt", Arrays.asList(
-                "Expression: Expr expression",
-                "Print     : Expr expression",
-                "Var       : Token name, Expr initializer"
+                "Block      : List<Stmt> statements",
+                "Expression : Expr expression",
+                "Print      : Expr expression",
+                "Var        : Token name, Expr initializer"
         ));
     }
 
@@ -32,6 +33,8 @@ public class GenerateAst {
         String path = outputDir + "/" + baseName + ".java";
         try (PrintWriter writer = new PrintWriter(path, StandardCharsets.UTF_8)) {
             writer.println("package com.craftinginterpreters.lox;");
+            writer.println();
+            writer.println("import java.util.List;");
             writer.println();
             writer.println("public abstract class " + baseName + " {");
 
