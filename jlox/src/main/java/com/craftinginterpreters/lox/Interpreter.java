@@ -3,6 +3,8 @@ package com.craftinginterpreters.lox;
 import java.util.List;
 
 public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+    private final Environment environment = new Environment();
+
     public void interpret(List<Stmt> statements) {
         try {
             for (Stmt statement : statements) {
@@ -35,6 +37,11 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
             // Unreachable
             default -> null;
         };
+    }
+
+    @Override
+    public Object visitVariableExpr(Expr.Variable expr) {
+        return environment.get(expr.name);
     }
 
     @Override
@@ -107,6 +114,25 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         Object value = evaluate(stmt.expression);
         System.out.println(stringify(value));
         return null;
+    }
+
+    @Override
+    public Void visitVarStmt(Stmt.Var stmt) {
+        Object value = null;
+        if (stmt.initializer != null) {
+            value = evaluate(stmt.initializer);
+        }
+        environment.define(stmt.name.lexeme(), value);
+        return null;
+    }
+
+    @Override
+    public Object visitAssignExpr(Expr.Assign expr) {
+        Object value = evaluate(expr.value);
+        environment.assign(expr.name, value);
+        // Return the assigned value because assignment is an expression that can be nested inside
+        // other expressions.
+        return value;
     }
 
     private static void checkNumberOperand(Token operator, Object operand) {
