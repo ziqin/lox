@@ -21,6 +21,27 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Object visitLogicalExpr(Expr.Logical expr) {
+        Object left = evaluate(expr.left);
+        // We evaluate the left operand first. We look at its value to see if we can short-circuit.
+        // If not, and only then, do we evaluate the right operand.
+        if (expr.operator.type() == TokenType.OR) {
+            // Since Lox is dynamically typed, we allow operands of any type and use truthiness to
+            // determine what each operand represents. We apply similar reasoning to the result.
+            // Instead of promising to literally return true or false, a logic operator merely
+            // guarantees it will return a value with appropriate truthiness.
+            //
+            // For example:
+            //     print "hi" or 2; // "hi"
+            //     print nil or "yes"; // "yes
+            if (isTruthy(left)) return left;
+        } else {
+            if (!isTruthy(left)) return left;
+        }
+        return evaluate(expr.right);
+    }
+
+    @Override
     public Object visitGroupingExpr(Expr.Grouping expr) {
         return evaluate(expr.expression);
     }
@@ -124,6 +145,16 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     @Override
     public Void visitExpressionStmt(Stmt.Expression stmt) {
         evaluate(stmt.expression);
+        return null;
+    }
+
+    @Override
+    public Void visitIfStmt(Stmt.If stmt) {
+        if (isTruthy(evaluate(stmt.condition))) {
+            execute(stmt.thenBranch);
+        } else if (stmt.elseBranch != null) {
+            execute(stmt.elseBranch);
+        }
         return null;
     }
 
