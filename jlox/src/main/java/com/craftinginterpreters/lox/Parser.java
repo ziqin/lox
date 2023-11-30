@@ -67,6 +67,7 @@ public class Parser {
 
     private Stmt declaration() {
         try {
+            if (match(FUN)) return function("function");
             if (match(VAR)) return varDeclaration();
             return statement();
         } catch (ParseError error) {
@@ -79,6 +80,7 @@ public class Parser {
         if (match(FOR)) return forStatement();
         if (match(IF)) return ifStatement();
         if (match(PRINT)) return printStatement();
+        if (match(RETURN)) return returnStatement();
         if (match(WHILE)) return whileStatement();
         if (match(LEFT_BRACE)) return new Stmt.Block(block());
 
@@ -150,6 +152,17 @@ public class Parser {
         return new Stmt.Print(value);
     }
 
+    private Stmt returnStatement() {
+        Token keyword = previous();
+        Expr value = null;
+        if (!check(SEMICOLON)) {
+            value = expression();
+        }
+
+        consume(SEMICOLON, "Expect ';' after return value.");
+        return new Stmt.Return(keyword, value);
+    }
+
     private Stmt varDeclaration() {
         Token name = consume(IDENTIFIER, "Expect variable name.");
         Expr initializer = null;
@@ -174,6 +187,32 @@ public class Parser {
         return new Stmt.Expression(expr);
     }
 
+    private Stmt.Function function(String kind) {
+        Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
+        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+
+        // Parse the parameter list and the pair of parentheses wrapped around it.
+        List<Token> parameters = new ArrayList<>();
+        // Handles the zero parameter case.
+        if (!check(RIGHT_PAREN)) {
+            // Parses parameters as long as we find commas to separate them.
+            do {
+                if (parameters.size() >= 255) {
+                    error(peek(), "Can't have more than 255 parameters.");
+                }
+                parameters.add(consume(IDENTIFIER, "Expect parameter name."));
+            } while (match(COMMA));
+        }
+        consume(RIGHT_PAREN, "Expect ')' after parameters.");
+
+        // Consuming '{' here lets us report a more precise error message if the '{' isn't found
+        // since we know it's in the context of a function declaration.
+        consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+        List<Stmt> body = block();
+        return new Stmt.Function(name, parameters, body);
+    }
+
+    // The left brace token '{' has already been matched.
     private List<Stmt> block() {
         List<Stmt> statements = new ArrayList<>();
         while (!check(RIGHT_BRACE) && !isAtEnd()) {
@@ -283,14 +322,45 @@ public class Parser {
         return expr;
     }
 
-    // unary -> ( "!" | "-" ) unary | primary ;
+    // unary -> ( "!" | "-" ) unary | call ;
     private Expr unary() {
         if (match(BANG, MINUS)) {
             Token operator = previous();
             Expr right = unary();
             return new Expr.Unary(operator, right);
         }
-        return primary();
+        return call();
+    }
+
+    // call -> primary ( "(" arguments? ")" )* ;
+    private Expr call() {
+        Expr expr = primary();
+        while (true) {
+            if (match(LEFT_PAREN)) {
+                expr = finishCall(expr);
+            } else {
+                break;
+            }
+        }
+        return expr;
+    }
+
+    private Expr finishCall(Expr callee) {
+        List<Expr> arguments = new ArrayList<>();
+        if (!check(RIGHT_PAREN)) {
+            do {
+                // Our Java interpreter for Lox doesn't really need a limit, but having a maximum
+                // number of arguments will simplify our bytecode interpreter. We want our two
+                // interpreters to be compatible with each other, even in weird corner cases like
+                // this, so we'll add the same limit to jlox.
+                if (arguments.size() >= 255) {
+                    error(peek(), "Can't have more than 255 arguments.");
+                }
+                arguments.add(expression());
+            } while (match(COMMA));
+        }
+        Token paren = consume(RIGHT_PAREN, "Expect ')' after arguments.");
+        return new Expr.Call(callee, paren, arguments);
     }
 
     // primary -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER ;

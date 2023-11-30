@@ -3,7 +3,27 @@ package com.craftinginterpreters.lox;
 import java.util.List;
 
 public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
-    private Environment environment = new Environment();
+    final Environment globals = new Environment();
+    private Environment environment = globals;
+
+    public Interpreter() {
+        globals.define("clock", new LoxCallable() {
+            @Override
+            public int arity() {
+                return 0;
+            }
+
+            @Override
+            public Object call(Interpreter interpreter, List<Object> arguments) {
+                return (double)System.currentTimeMillis() / 1000.0;
+            }
+
+            @Override
+            public String toString() {
+                return "<native fn>";
+            }
+        });
+    }
 
     public void interpret(List<Stmt> statements) {
         try {
@@ -116,6 +136,26 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         };
     }
 
+    @Override
+    public Object visitCallExpr(Expr.Call expr) {
+        Object callee = evaluate(expr.callee);
+
+        // Since argument expressions may have side effects,
+        // the order they are evaluated could be user visible.
+        List<Object> arguments = expr.arguments.stream()
+                .map(this::evaluate)
+                .toList();
+
+        if (!(callee instanceof LoxCallable function)) {
+            throw new RuntimeError(expr.paren, "Can only call functions and classes.");
+        }
+        if (arguments.size() != function.arity()) {
+            throw new RuntimeError(expr.paren,
+                    String.format("Expected %d arguments but got %d.", function.arity(), arguments.size()));
+        }
+        return function.call(this, arguments);
+    }
+
     private Object evaluate(Expr expr) {
         return expr.accept(this);
     }
@@ -124,7 +164,7 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         stmt.accept(this);
     }
 
-    private void executeBlock(List<Stmt> statements, Environment environment) {
+    void executeBlock(List<Stmt> statements, Environment environment) {
         Environment previous = this.environment;
         try {
             this.environment = environment;
@@ -148,6 +188,15 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         return null;
     }
 
+    // We take a function syntax node--a compile-time representation of the function--and convert it
+    // to its runtime representation.
+    @Override
+    public Void visitFunctionStmt(Stmt.Function stmt) {
+        LoxFunction function = new LoxFunction(stmt);
+        environment.define(stmt.name.lexeme(), function);
+        return null;
+    }
+
     @Override
     public Void visitIfStmt(Stmt.If stmt) {
         if (isTruthy(evaluate(stmt.condition))) {
@@ -163,6 +212,17 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         Object value = evaluate(stmt.expression);
         System.out.println(stringify(value));
         return null;
+    }
+
+    @Override
+    public Void visitReturnStmt(Stmt.Return stmt) {
+        Object value = null;
+        if (stmt.value != null) value = evaluate(stmt.value);
+
+        // Since our own syntax tree evaluation is so heavily tied to the Java call stack, we're
+        // pressed to do some heavyweight call stack manipulation occasionally, and exceptions are
+        // a handy tool for that.
+        throw new Return(value);
     }
 
     @Override
