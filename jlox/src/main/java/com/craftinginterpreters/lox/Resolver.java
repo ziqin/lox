@@ -6,6 +6,11 @@ import java.util.Map;
 import java.util.Stack;
 
 class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+    private enum FunctionType {
+        NONE,
+        FUNCTION,
+    }
+
     private final Interpreter interpreter;
 
     // The scope stack is only used for local block scopes. Variables declared at the top level in
@@ -13,6 +18,8 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
     // resolving a variable, if we can't find it in the stack of local scopes, we assume it must
     // be global.
     private final Stack<Map<String, Boolean>> scopes = new Stack<>();
+
+    private FunctionType currentFunction = FunctionType.NONE;
 
     Resolver(Interpreter interpreter) {
         this.interpreter = interpreter;
@@ -45,7 +52,7 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         // This lets a function recursively refer to itself inside its own body.
         define(stmt.name);
 
-        resolveFunction(stmt);
+        resolveFunction(stmt, FunctionType.FUNCTION);
         return null;
     }
 
@@ -65,6 +72,9 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
 
     @Override
     public Void visitReturnStmt(Stmt.Return stmt) {
+        if (currentFunction == FunctionType.NONE) {
+            Lox.error(stmt.keyword, "Can't return from top-level code.");
+        }
         if (stmt.value != null) {
             resolve(stmt.value);
         }
@@ -158,7 +168,13 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         expr.accept(this);
     }
 
-    private void resolveFunction(Stmt.Function function) {
+    private void resolveFunction(Stmt.Function function, FunctionType type) {
+        // As function declarations can be nested arbitrarily deeply, wee need to track not just
+        // that we're in a function, but how many we're in. We store the previous value in a local
+        // on the Java stack. When we're done resolving the function body, we restore the field to
+        // that value.
+        FunctionType enclosingFunction = currentFunction;
+        currentFunction = type;
         beginScope();
         for (Token param : function.params) {
             declare(param);
@@ -166,6 +182,7 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         }
         resolve(function.body);
         endScope();
+        currentFunction = enclosingFunction;
     }
 
     private void beginScope() {
@@ -179,6 +196,9 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
     private void declare(Token name) {
         if (scopes.isEmpty()) return;
         Map<String, Boolean> scope = scopes.peek();
+        if (scope.containsKey(name.lexeme())) {
+            Lox.error(name, "Already a variable with this name in this scope.");
+        }
         scope.put(name.lexeme(), false);  // marked as "not ready yet"
     }
 
