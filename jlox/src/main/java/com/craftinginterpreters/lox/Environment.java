@@ -40,4 +40,22 @@ public class Environment {
     public void define(String name, Object value) {
         values.put(name, value);
     }
+
+    public Environment ancestor(int distance) {
+        Environment environment = this;
+        for (int i = 0; i < distance; i++) {
+            environment = environment.enclosing;
+        }
+        return environment;
+    }
+
+    public Object getAt(int distance, String name) {
+        // getAt() doesn't even have to check to see if the variable is there --- we know it will
+        // be because the resolver already found it before.
+        return ancestor(distance).values.get(name);
+    }
+
+    public void assignAt(int distance, Token name, Object value) {
+        ancestor(distance).values.put(name.lexeme(), value);
+    }
 }
