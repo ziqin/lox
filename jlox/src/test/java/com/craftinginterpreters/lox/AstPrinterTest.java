@@ -24,22 +24,23 @@ public class AstPrinterTest {
         Expr fooCall = new Expr.Call(
                 new Expr.Variable(new Token(TokenType.IDENTIFIER, "foo", null, 1)),
                 new Token(TokenType.RIGHT_PAREN, ")", null, 1),
-                List.of(new Expr.Literal("hello"), new Expr.Literal("world"))
+                List.of(new Expr.Variable(new Token(TokenType.IDENTIFIER, "hello", null, 1)),
+                        new Expr.Variable(new Token(TokenType.IDENTIFIER, "world", null, 1)))
         );
-        assertEquals("foo(\"hello\", \"world\")", printer.print(fooCall));
+        assertEquals("foo(hello, world)", printer.print(fooCall));
 
         Expr barCall = new Expr.Call(
                 fooCall,
                 new Token(TokenType.RIGHT_PAREN, ")", null, 1),
-                List.of(new Expr.Literal("lox"))
+                List.of(new Expr.Variable(new Token(TokenType.IDENTIFIER, "lox", null, 1)))
         );
-        assertEquals("foo(\"hello\", \"world\")(\"lox\")", printer.print(barCall));
+        assertEquals("foo(hello, world)(lox)", printer.print(barCall));
 
         Expr lastCall = new Expr.Call(
                 barCall,
                 new Token(TokenType.RIGHT_PAREN, ")", null, 1),
                 List.of()
         );
-        assertEquals("foo(\"hello\", \"world\")(\"lox\")()", printer.print(lastCall));
+        assertEquals("foo(hello, world)(lox)()", printer.print(lastCall));
     }
 }
