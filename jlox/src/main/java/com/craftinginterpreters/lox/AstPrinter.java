@@ -24,6 +24,30 @@ public class AstPrinter implements Expr.Visitor<String> {
     }
 
     @Override
+    public String visitGetExpr(Expr.Get expr) {
+        return parenthesize(
+                "get",
+                expr.object.accept(this),
+                expr.name.lexeme()
+        );
+    }
+
+    @Override
+    public String visitSetExpr(Expr.Set expr) {
+        return parenthesize(
+                "set",
+                expr.object.accept(this),
+                expr.name.lexeme(),
+                expr.value.accept(this)
+        );
+    }
+
+    @Override
+    public String visitThisExpr(Expr.This expr) {
+        return "this";
+    }
+
+    @Override
     public String visitGroupingExpr(Expr.Grouping expr) {
         return parenthesize("group", expr.expression);
     }
@@ -60,6 +84,17 @@ public class AstPrinter implements Expr.Visitor<String> {
         for (Expr expr : exprs) {
             builder.append(' ');
             builder.append(expr.accept(this));
+        }
+        builder.append(')');
+        return builder.toString();
+    }
+
+    private String parenthesize(String name, String... strings) {
+        StringBuilder builder = new StringBuilder();
+        builder.append('(').append(name);
+        for (String string : strings) {
+            builder.append(' ');
+            builder.append(string);
         }
         builder.append(')');
         return builder.toString();

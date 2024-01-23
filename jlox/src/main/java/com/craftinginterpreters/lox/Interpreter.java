@@ -65,6 +65,24 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Object visitSetExpr(Expr.Set expr) {
+        Object object = evaluate(expr.object);
+
+        if (!(object instanceof LoxInstance instance)) {
+            throw new RuntimeError(expr.name, "Only instances have fields");
+        }
+
+        Object value = evaluate(expr.value);
+        instance.set(expr.name, value);
+        return value;
+    }
+
+    @Override
+    public Object visitThisExpr(Expr.This expr) {
+        return lookUpVariable(expr.keyword, expr);
+    }
+
+    @Override
     public Object visitGroupingExpr(Expr.Grouping expr) {
         return evaluate(expr.expression);
     }
@@ -172,6 +190,15 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         return function.call(this, arguments);
     }
 
+    @Override
+    public Object visitGetExpr(Expr.Get expr) {
+        Object object = evaluate(expr.object);
+        if (object instanceof LoxInstance instance) {
+            return instance.get(expr.name);
+        }
+        throw new RuntimeError(expr.name, "Only instances have properties");
+    }
+
     private Object evaluate(Expr expr) {
         return expr.accept(this);
     }
@@ -203,6 +230,29 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Void visitClassStmt(Stmt.Class stmt) {
+        // We declare the class's name in the current environment. Then we turn the class syntax
+        // node into a LoxClass, the runtime representation of a class. We circle back and store
+        // the class object in the variable we previously declared. That two-stage variable
+        // binding process allows references to the class inside its own methods.
+        environment.define(stmt.name.lexeme(), null);
+
+        Map<String, LoxFunction> methods = new HashMap<>();
+        for (Stmt.Function method : stmt.methods) {
+            LoxFunction function = new LoxFunction(
+                    method,
+                    environment,
+                    method.name.lexeme().equals("init")
+            );
+            methods.put(method.name.lexeme(), function);
+        }
+
+        LoxClass klass = new LoxClass(stmt.name.lexeme(), methods);
+        environment.assign(stmt.name, klass);
+        return null;
+    }
+
+    @Override
     public Void visitExpressionStmt(Stmt.Expression stmt) {
         evaluate(stmt.expression);
         return null;
@@ -212,7 +262,7 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     // to its runtime representation.
     @Override
     public Void visitFunctionStmt(Stmt.Function stmt) {
-        LoxFunction function = new LoxFunction(stmt, environment);
+        LoxFunction function = new LoxFunction(stmt, environment, false);
         environment.define(stmt.name.lexeme(), function);
         return null;
     }

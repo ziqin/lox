@@ -5,10 +5,18 @@ import java.util.List;
 public class LoxFunction implements LoxCallable {
     private final Stmt.Function declaration;
     private final Environment closure;
+    private final boolean isInitializer;
 
-    public LoxFunction(Stmt.Function declaration, Environment closure) {
+    public LoxFunction(Stmt.Function declaration, Environment closure, boolean isInitializer) {
+        this.isInitializer = isInitializer;
         this.closure = closure;
         this.declaration = declaration;
+    }
+
+    LoxFunction bind(LoxInstance instance) {
+        Environment environment = new Environment(closure);
+        environment.define("this", instance);
+        return new LoxFunction(declaration, environment, isInitializer);
     }
 
     @Override
@@ -24,10 +32,17 @@ public class LoxFunction implements LoxCallable {
         try {
             interpreter.executeBlock(declaration.body, environment);
         } catch (Return returnValue) {
+            if (isInitializer) {
+                return closure.getAt(0, "this");
+            }
             return returnValue.value;
         }
         // If it never catches one of these exceptions, it means the function reached the end of
-        // its body without hitting a return statement. In that case, it implicitly returns nil.
+        // its body without hitting a return statement. In that case, a non-initializer function
+        // implicitly returns nil.
+        if (isInitializer) {
+            return closure.getAt(0, "this");
+        }
         return null;
     }
 
