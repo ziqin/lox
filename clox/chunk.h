@@ -10,23 +10,38 @@ typedef enum {
   OP_RETURN,
 } OpCode;
 
+typedef struct CodeLinePair CodeLinePair;
+
+// A dynamic array storing the line information.
+// Compression scheme: For a consecutive segment of instructions with the same
+// source line number, only 1 CodeLinePair is stored.
+typedef struct {
+  int count;
+  int capacity;
+  CodeLinePair* data;
+} SourceLines;
+
 // A dynamic array of instructions.
 typedef struct {
   int count;
   int capacity;
   uint8_t* code;
-  int* lines; // The line information is kepted in a separate array instead of
-              // interleaving it in the bytecode itself. Since line information
-              // is only used when a runtime error occurs, we don't want it
-              // between the instructions, taking up precious space in the CPU
-              // cache and causing more cache misses as the interpreter skips
-              // past it to get to the opcodes and operands it cares about.
+  SourceLines lines; // The line information is stored separately instead of
+                     // interleaving it in the bytecode itself. Since line
+                     // information is only used when a runtime error occurs,
+                     // this design improves CPU caching.
   ValueArray constants;
 } Chunk;
 
 void initChunk(Chunk* chunk);
 void freeChunk(Chunk* chunk);
 void writeChunk(Chunk* chunk, uint8_t byte, int line);
+
+// Given the index of an instruction,
+// Returns the line where the instruction occurs.
+// Time complexity: The insertion process implies an ascending order of bytecode
+// offset in chunk->lines, which enables O(log(offset)) lookup.
+int getLine(Chunk* chunk, int offset);
 
 // Appends a constant to the constant array.
 // Returns the index where the constant was appended.
