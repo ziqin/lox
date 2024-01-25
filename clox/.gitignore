@@ -1,0 +1,19 @@
+# Executables
+clox
+*.exe
+
+# Object files
+*.o
+*.obj
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects
+*.dylib
+*.so
+*.so.*
+*.dll
