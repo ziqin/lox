@@ -4,7 +4,7 @@
 #include "debug.h"
 #include "vm.h"
 
-VM vm;
+static VM vm;
 
 static void resetStack() {
   vm.stackTop = vm.stack;
