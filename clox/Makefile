@@ -1,6 +1,6 @@
 CFLAGS=-std=c11 -Wall -Wextra
 
-clox: main.o chunk.o memory.o debug.o value.o vm.o
+clox: main.o chunk.o memory.o debug.o value.o vm.o compiler.o scanner.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 main.o: common.h chunk.h debug.h vm.h
@@ -21,9 +21,13 @@ value.o: memory.h value.h
 
 value.h: common.h
 
-vm.o: common.h debug.h vm.h
+vm.o: common.h compiler.h debug.h vm.h
 
 vm.h: chunk.h value.h
+
+compiler.o: common.h compiler.h scanner.h
+
+scanner.o: common.h scanner.h
 
 .PHONY: clean
 clean:
