@@ -69,7 +69,7 @@ void writeChunk(Chunk* chunk, uint8_t byte, int line) {
 }
 
 // Binary search
-int getLine(Chunk* chunk, int offset) {
+int getLine(const Chunk* chunk, int offset) {
   assert(chunk->lines.count > 0 & chunk->lines.data != NULL);
   int left = 0, mid = 0, right = chunk->lines.count;
   while (left + 1 < right) {

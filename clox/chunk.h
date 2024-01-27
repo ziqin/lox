@@ -46,7 +46,7 @@ void writeChunk(Chunk* chunk, uint8_t byte, int line);
 // Returns the line where the instruction occurs.
 // Time complexity: The insertion process implies an ascending order of bytecode
 // offset in chunk->lines, which enables O(log(offset)) lookup.
-int getLine(Chunk* chunk, int offset);
+int getLine(const Chunk* chunk, int offset);
 
 // Appends a constant to the constant array.
 // Returns the index where the constant was appended.
