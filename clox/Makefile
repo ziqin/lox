@@ -27,6 +27,8 @@ vm.h: chunk.h value.h
 
 compiler.o: common.h compiler.h scanner.h
 
+compiler.h: vm.h
+
 scanner.o: common.h scanner.h
 
 .PHONY: clean

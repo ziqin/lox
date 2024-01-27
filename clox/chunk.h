@@ -54,9 +54,11 @@ int addConstant(Chunk* chunk, Value value);
 
 // Adds value to chunk's constant array and writes an appropriate instruction
 // to load the constant.
+// Returns the number of bytecodes written (2 or 4) upon successful completion,
+// otherwise returns -1 to indicate too many constants in one chunk.
 // Potential instructions:
 // - OP_CONSTANT: followed by 1 octet as index
 // - OP_CONSTANT_LONG: followed by 3 octets in little endian as index
-void writeConstant(Chunk* chunk, Value value, int line);
+int writeConstant(Chunk* chunk, Value value, int line);
 
 #endif
