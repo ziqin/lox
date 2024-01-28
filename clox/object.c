@@ -9,7 +9,7 @@
 #define ALLOCATE_OBJ(type, objectType) \
   (type*)allocateObject(sizeof(type), objectType)
 
-static Obj* allocateObject(size_t size, ObjType type) {
+static void* allocateObject(size_t size, ObjType type) {
   Obj* object = reallocate(NULL, 0, size);
   object->type = type;
 
@@ -19,22 +19,22 @@ static Obj* allocateObject(size_t size, ObjType type) {
   return object;
 }
 
-static ObjString* allocateString(char* chars, int length) {
-  ObjString* string = ALLOCATE_OBJ(ObjString, OBJ_STRING);
+ObjString* copyString(const char* chars, int length) {
+  ObjString* string = allocateObject(STRING_SIZE(length), OBJ_STRING);
   string->length = length;
-  string->chars = chars;
+  memcpy(string->chars, chars, sizeof(char) * length);
+  string->chars[length] = '\0';
   return string;
 }
 
-ObjString* takeString(char* chars, int length) {
-  return allocateString(chars, length);
-}
-
-ObjString* copyString(const char* chars, int length) {
-  char* heapChars = ALLOCATE(char, length + 1);
-  memcpy(heapChars, chars, sizeof(char) * length);
-  heapChars[length] = '\0';
-  return allocateString(heapChars, length);
+ObjString* concatStrings(const ObjString* a, const ObjString* b) {
+  int length = a->length + b->length;
+  ObjString* result = allocateObject(STRING_SIZE(length), OBJ_STRING);
+  result->length = length;
+  memcpy(result->chars, a->chars, sizeof(char) * a->length);
+  memcpy(result->chars + a->length, b->chars, sizeof(char) * b->length);
+  result->chars[length] = '\0';
+  return result;
 }
 
 void printObject(Value value) {

@@ -1,6 +1,5 @@
 #include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
 
 #include "common.h"
 #include "compiler.h"
@@ -67,14 +66,7 @@ static bool isFalsey(Value value) {
 static void concatenate() {
   ObjString* b = AS_STRING(pop());
   ObjString* a = AS_STRING(pop());
-
-  int length = a->length + b->length;
-  char* chars = ALLOCATE(char, length + 1);
-  memcpy(chars, a->chars, sizeof(char) * a->length);
-  memcpy(chars + a->length, b->chars, sizeof(char) * b->length);
-  chars[length] = '\0';
-
-  ObjString* result = takeString(chars, length);
+  ObjString* result = concatStrings(a, b);
   push(OBJ_VAL(result));
 }
 

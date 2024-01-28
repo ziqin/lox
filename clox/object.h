@@ -11,6 +11,9 @@
 #define AS_STRING(value)  ((ObjString*)AS_OBJ(value))
 #define AS_CSTRING(value) (((ObjString*)AS_OBJ(value))->chars)
 
+// One more byte for the tailing '\0'.
+#define STRING_SIZE(length) (sizeof(ObjString) + sizeof(char[(length) + 1]))
+
 typedef enum {
   OBJ_STRING,
 } ObjType;
@@ -23,11 +26,11 @@ struct Obj {
 struct ObjString {
   Obj obj;
   int length;
-  char* chars;
+  char chars[];
 };
 
-ObjString* takeString(char* chars, int length);
 ObjString* copyString(const char* chars, int length);
+ObjString* concatStrings(const ObjString* a, const ObjString* b);
 void printObject(Value value);
 
 static inline bool isObjType(Value value, ObjType type) {
