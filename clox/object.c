@@ -3,6 +3,7 @@
 
 #include "memory.h"
 #include "object.h"
+#include "table.h"
 #include "value.h"
 #include "vm.h"
 
@@ -19,21 +20,49 @@ static void* allocateObject(size_t size, ObjType type) {
   return object;
 }
 
+// FNA-1a algorithm.
+static uint32_t hashString(const char* key, int length) {
+  uint32_t hash = 2166136261u;
+  for (int i = 0; i < length; i++) {
+    hash ^= (uint8_t)key[i];
+    hash *= 16777619;
+  }
+  return hash;
+}
+
 ObjString* copyString(const char* chars, int length) {
+  uint32_t hash = hashString(chars, length);
+  ObjString* interned = tableFindString(&vm.strings, chars, length, hash);
+  if (interned != NULL) return interned;
+
   ObjString* string = allocateObject(STRING_SIZE(length), OBJ_STRING);
   string->length = length;
+  string->hash = hash;
   memcpy(string->chars, chars, sizeof(char) * length);
   string->chars[length] = '\0';
+  tableSet(&vm.strings, string, NIL_VAL);
   return string;
 }
 
 ObjString* concatStrings(const ObjString* a, const ObjString* b) {
   int length = a->length + b->length;
   ObjString* result = allocateObject(STRING_SIZE(length), OBJ_STRING);
-  result->length = length;
   memcpy(result->chars, a->chars, sizeof(char) * a->length);
   memcpy(result->chars + a->length, b->chars, sizeof(char) * b->length);
+
+  result->hash = hashString(result->chars, length);
+  ObjString* interned = tableFindString(&vm.strings, result->chars,
+      length, result->hash);
+  if (interned != NULL) {
+    // Remove the temporary object from the all-objects list.
+    vm.objects = vm.objects->next;
+    reallocate(result, STRING_SIZE(length), 0);
+    return interned;
+  }
+
+  result->length = length;
   result->chars[length] = '\0';
+  tableSet(&vm.strings, result, NIL_VAL);
   return result;
 }
 

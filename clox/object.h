@@ -26,6 +26,7 @@ struct Obj {
 struct ObjString {
   Obj obj;
   int length;
+  uint32_t hash; // We can cache the hash because strings are immutable in Lox.
   char chars[];
 };
 
