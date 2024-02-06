@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#include "chunk.h"
 #include "common.h"
 #include "compiler.h"
 #include "debug.h"
@@ -8,6 +9,7 @@
 #include "memory.h"
 #include "vm.h"
 
+// Ignore __attribute__ in compilers incompatible with GCC.
 #ifndef __GNUC__
 #define __attribute__(a)
 #endif
@@ -37,10 +39,12 @@ void runtimeError(const char* format, ...) {
 void initVM() {
   resetStack();
   vm.objects = NULL;
+  initTable(&vm.globals);
   initTable(&vm.strings);
 }
 
 void freeVM() {
+  freeTable(&vm.globals);
   freeTable(&vm.strings);
   freeObjects();
 }
@@ -73,15 +77,17 @@ static void concatenate() {
 }
 
 static inline Value readConstantLong() {
-  int i = *vm.ip++;
-  int j = (*vm.ip++) << 8;
-  int k = (*vm.ip++) << 16;
+  uint32_t i = *vm.ip++;
+  uint32_t j = (*vm.ip++) << 8;
+  uint32_t k = (*vm.ip++) << 16;
   return vm.chunk->constants.values[i | j | k];
 }
 
 static InterpretResult run() {
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+#define READ_STRING() AS_STRING(READ_CONSTANT())
+#define READ_STRING_LONG() AS_STRING(readConstantLong())
 // When the operands themselves are calculated, the left is evaluated first,
 // then the right. That means the left operand gets pushed before the right
 // operand. SO the right operand will be on the top of the stack. Thus, the
@@ -124,6 +130,67 @@ static InterpretResult run() {
       case OP_NIL:      push(NIL_VAL); break;
       case OP_TRUE:     push(BOOL_VAL(true)); break;
       case OP_FALSE:    push(BOOL_VAL(false)); break;
+      case OP_POP:      pop(); break;
+      case OP_GET_GLOBAL: {
+        ObjString* name = READ_STRING();
+        Value value;
+        if (!tableGet(&vm.globals, name, &value)) {
+          runtimeError("Undefined variable '%s'.", name->chars);
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        push(value);
+        break;
+      }
+      case OP_GET_GLOBAL_LONG: {
+        ObjString* name = READ_STRING_LONG();
+        Value value;
+        if (!tableGet(&vm.globals, name, &value)) {
+          runtimeError("Undefined variable '%s'.", name->chars);
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        push(value);
+        break;
+      }
+      // Note that we don't pop the value until after we add it to the hash
+      // table. That ensures the VM can still find the value if a garbage
+      // collection is triggered right in the middle of adding it to the hash
+      // table. That's a distinct possibility since the hash table requires
+      // dynamic allocation when it resizes.
+      case OP_DEFINE_GLOBAL: {
+        ObjString* name = READ_STRING();
+        tableSet(&vm.globals, name, peek(0));
+        pop();
+        break;
+      }
+      case OP_DEFINE_GLOBAL_LONG: {
+        ObjString* name = READ_STRING_LONG();
+        tableSet(&vm.globals, name, peek(0));
+        pop();
+        break;
+      }
+      // The call to tableSet() stores the value in the global variable table
+      // even if the variable wasn't previously defined. That fact is visible in
+      // a REPL session, since it keeps running even after the runtime error is
+      // reported. So we also take care to delete that zombie value from the
+      // table.
+      case OP_SET_GLOBAL: {
+        ObjString* name = READ_STRING();
+        if (tableSet(&vm.globals, name, peek(0))) {
+          tableDelete(&vm.globals, name);
+          runtimeError("Undefined variables '%s'.", name->chars);
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        break;
+      }
+      case OP_SET_GLOBAL_LONG: {
+        ObjString* name = READ_STRING_LONG();
+        if (tableSet(&vm.globals, name, peek(0))) {
+          tableDelete(&vm.globals, name);
+          runtimeError("Undefined variables '%s'.", name->chars);
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        break;
+      }
       case OP_EQUAL: {
         Value b = pop();
         Value a = pop();
@@ -156,9 +223,13 @@ static InterpretResult run() {
         }
         push(NUMBER_VAL(-AS_NUMBER(pop())));
         break;
-      case OP_RETURN: {
+      case OP_PRINT: {
         printValue(pop());
         printf("\n");
+        break;
+      }
+      case OP_RETURN: {
+        // Exit interpreter.
         return INTERPRET_OK;
       }
     }
@@ -166,6 +237,8 @@ static InterpretResult run() {
 
 #undef READ_BYTE
 #undef READ_CONSTANT
+#undef READ_STRING
+#undef READ_STRING_LONG
 #undef BINARY_OP
 }
 

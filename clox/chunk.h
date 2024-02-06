@@ -10,6 +10,13 @@ typedef enum {
   OP_NIL,
   OP_TRUE,
   OP_FALSE,
+  OP_POP,
+  OP_GET_GLOBAL,
+  OP_GET_GLOBAL_LONG,
+  OP_DEFINE_GLOBAL,
+  OP_DEFINE_GLOBAL_LONG,
+  OP_SET_GLOBAL,
+  OP_SET_GLOBAL_LONG,
   OP_EQUAL,
   OP_GREATER,
   OP_LESS,
@@ -19,6 +26,7 @@ typedef enum {
   OP_DIVIDE,
   OP_NOT,
   OP_NEGATE,
+  OP_PRINT,
   OP_RETURN,
 } OpCode;
 
@@ -58,14 +66,5 @@ int getLine(const Chunk* chunk, int offset);
 // Appends a constant to the constant array.
 // Returns the index where the constant was appended.
 int addConstant(Chunk* chunk, Value value);
-
-// Adds value to chunk's constant array and writes an appropriate instruction
-// to load the constant.
-// Returns the number of bytecodes written (2 or 4) upon successful completion,
-// otherwise returns -1 to indicate too many constants in one chunk.
-// Potential instructions:
-// - OP_CONSTANT: followed by 1 octet as index
-// - OP_CONSTANT_LONG: followed by 3 octets in little endian as index
-int writeConstant(Chunk* chunk, Value value, int line);
 
 #endif
