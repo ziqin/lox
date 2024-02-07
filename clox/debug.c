@@ -6,7 +6,7 @@
 #include "debug.h"
 #include "value.h"
 
-void disassembleChunk(Chunk* chunk, const char* name) {
+void disassembleChunk(const Chunk* chunk, const char* name) {
   printf("== %s ==\n", name);
 
   for (int offset = 0; offset < chunk->count;) {
@@ -17,7 +17,8 @@ void disassembleChunk(Chunk* chunk, const char* name) {
 // Prints out the name of the opcode, prints the constant index from the
 // subsequent byte in the chunk, and displays the actual constant value.
 // Returns the byte offset of the next instruction.
-static int constantInstruction(const char* name, Chunk* chunk, int offset) {
+static int constantInstruction(const char* name, const Chunk* chunk,
+    int offset) {
   uint8_t constant = chunk->code[offset + 1];
   printf("%-16s %4" PRIu8 " '", name, constant);
   printValue(chunk->constants.values[constant]);
@@ -28,7 +29,8 @@ static int constantInstruction(const char* name, Chunk* chunk, int offset) {
 // Prints out the name of the opcode, prints the constant index from the
 // subsequent byte in the chunk, and displays the actual constant value.
 // Returns the byte offset of the next instruction.
-static int constantInstructionLong(const char* name, Chunk* chunk, int offset) {
+static int constantInstructionLong(const char* name, const Chunk* chunk,
+    int offset) {
   uint8_t* operand = &chunk->code[offset + 1];
   uint32_t constant = operand[0] | (operand[1] << 8) | (operand[2] << 16);
   printf("%-16s %4" PRIu32 " '", name, constant);
@@ -44,7 +46,16 @@ static int simpleInstruction(const char* name, int offset) {
   return offset + 1;
 }
 
-int disassembleInstruction(Chunk* chunk, int offset) {
+static int byteInstruction(const char* name, const Chunk* chunk, int offset) {
+  // The local variable's name never leaves the compiler to make it into the
+  // chunk at all. That's great for performance, but it means that we can't show
+  // the variable's name like we could with globals during introspection.
+  uint8_t slot = chunk->code[offset + 1];
+  printf("%-16s %4d\n", name, slot);
+  return offset + 2;
+}
+
+int disassembleInstruction(const Chunk* chunk, int offset) {
   printf("%04d ", offset);
   int line = getLine(chunk, offset);
   if (offset > 0 && line == getLine(chunk, offset - 1)) {
@@ -67,6 +78,10 @@ int disassembleInstruction(Chunk* chunk, int offset) {
       return simpleInstruction("OP_FALSE", offset);
     case OP_POP:
       return simpleInstruction("OP_POP", offset);
+    case OP_GET_LOCAL:
+      return byteInstruction("OP_GET_LOCAL", chunk, offset);
+    case OP_SET_LOCAL:
+      return byteInstruction("OP_SET_LOCAL", chunk, offset);
     case OP_GET_GLOBAL:
       return constantInstruction("OP_GET_GLOBAL", chunk, offset);
     case OP_GET_GLOBAL_LONG:

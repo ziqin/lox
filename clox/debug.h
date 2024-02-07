@@ -3,10 +3,10 @@
 
 #include "chunk.h"
 
-void disassembleChunk(Chunk* chunk, const char* name);
+void disassembleChunk(const Chunk* chunk, const char* name);
 
 // Disassembles the instruction at the given offset.
 // Returns the offset of the next instruction.
-int disassembleInstruction(Chunk* chunk, int offset);
+int disassembleInstruction(const Chunk* chunk, int offset);
 
 #endif
