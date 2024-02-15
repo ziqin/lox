@@ -76,18 +76,16 @@ static void concatenate() {
   push(OBJ_VAL(result));
 }
 
-static inline Value readConstantLong() {
-  uint32_t i = *vm.ip++;
-  uint32_t j = (*vm.ip++) << 8;
-  uint32_t k = (*vm.ip++) << 16;
-  return vm.chunk->constants.values[i | j | k];
-}
-
 static InterpretResult run() {
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+#define READ_CONSTANT_LONG() \
+  (vm.ip += 3, \
+   vm.chunk->constants.values[vm.ip[-3] << 16 | vm.ip[-2] << 8 | vm.ip[-1]])
 #define READ_STRING() AS_STRING(READ_CONSTANT())
-#define READ_STRING_LONG() AS_STRING(readConstantLong())
+#define READ_STRING_LONG() AS_STRING(READ_CONSTANT_LONG())
+#define READ_SHORT() \
+  (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
 // When the operands themselves are calculated, the left is evaluated first,
 // then the right. That means the left operand gets pushed before the right
 // operand. SO the right operand will be on the top of the stack. Thus, the
@@ -123,7 +121,7 @@ static InterpretResult run() {
         break;
       }
       case OP_CONSTANT_LONG: {
-        Value constant = readConstantLong();
+        Value constant = READ_CONSTANT_LONG();
         push(constant);
         break;
       }
@@ -244,6 +242,21 @@ static InterpretResult run() {
         printf("\n");
         break;
       }
+      case OP_JUMP: {
+        uint16_t offset = READ_SHORT();
+        vm.ip += offset;
+        break;
+      }
+      case OP_JUMP_IF_FALSE: {
+        uint16_t offset = READ_SHORT();
+        if (isFalsey(peek(0))) vm.ip += offset;
+        break;
+      }
+      case OP_LOOP: {
+        uint16_t offset = READ_SHORT();
+        vm.ip -= offset;
+        break;
+      }
       case OP_RETURN: {
         // Exit interpreter.
         return INTERPRET_OK;
@@ -252,6 +265,7 @@ static InterpretResult run() {
   }
 
 #undef READ_BYTE
+#undef READ_SHORT
 #undef READ_CONSTANT
 #undef READ_STRING
 #undef READ_STRING_LONG
