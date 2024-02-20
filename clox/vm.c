@@ -1,5 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
+#include <time.h>
 
 #include "chunk.h"
 #include "common.h"
@@ -16,12 +18,18 @@
 
 VM vm;
 
-static void resetStack() {
-  vm.stackTop = vm.stack;
-}
-
 static void runtimeError(const char* format, ...)
   __attribute__ ((format (printf, 1, 2)));
+
+// Returns the elapsed time since the program started running, in seconds.
+static Value clockNative(int UNUSED(argCount), Value* UNUSED(args)) {
+  return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+}
+
+static void resetStack() {
+  vm.stackTop = vm.stack;
+  vm.frameCount = 0;
+}
 
 void runtimeError(const char* format, ...) {
   va_list args;
@@ -30,10 +38,32 @@ void runtimeError(const char* format, ...) {
   va_end(args);
   fputs("\n", stderr);
 
-  ptrdiff_t instruction = vm.ip - 1 - vm.chunk->code;
-  int line = getLine(vm.chunk, (int)instruction);
-  fprintf(stderr, "[line %d] in script\n", line);
+  for (int i = vm.frameCount - 1; i >= 0; i--) {
+    CallFrame* frame = &vm.frames[i];
+    ObjFunction* function = frame->function;
+    ptrdiff_t instruction = frame->ip - 1 - frame->function->chunk.code;
+    fprintf(stderr, "[line %d] in ",
+            getLine(&function->chunk, (int)instruction));
+    if (function->name == NULL) {
+      fprintf(stderr, "script\n");
+    } else {
+      fprintf(stderr, "%s()\n", function->name->chars);
+    }
+  }
+
   resetStack();
+}
+
+static void defineNative(const char* name, NativeFn function) {
+  // Both copyString() and newNative() dynamically allocate memory. That means
+  // they can potentially trigger a collection. By storing them on the value
+  // stack, we ensure the collector knows we're not done with the name and
+  // ObjFunction so that it doesn't free them out from under us.
+  push(OBJ_VAL(copyString(name, (int)strlen(name))));
+  push(OBJ_VAL(newNative(function)));
+  tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+  pop();
+  pop();
 }
 
 void initVM() {
@@ -41,6 +71,8 @@ void initVM() {
   vm.objects = NULL;
   initTable(&vm.globals);
   initTable(&vm.strings);
+
+  defineNative("clock", clockNative);
 }
 
 void freeVM() {
@@ -63,6 +95,58 @@ static Value peek(int distance) {
   return vm.stackTop[-1 - distance];
 }
 
+static bool call(ObjFunction* function, int argCount) {
+  if (argCount != function->arity) {
+    runtimeError("Expected %d arguments but got %d.",
+        function->arity, argCount);
+    return false;
+  }
+
+  if (vm.frameCount == FRAMES_MAX) {
+    runtimeError("Stack overflow.");
+    return false;
+  }
+
+  CallFrame* frame = &vm.frames[vm.frameCount++];
+  frame->function = function;
+  frame->ip = function->chunk.code;
+  // The top of the caller's stack contains the function being called followed
+  // by the arguments in order. The bottom of the callee's stack overlaps so
+  // that the parameter slots exactly line up with where the argument values
+  // already live. This means that we don't need to do any work to "bind an
+  // argument to a parameter". There's no copying values between slots or across
+  // environments. The arguments are already exactly where they need to be.
+  frame->slots = vm.stackTop - argCount - 1;
+  return true;
+}
+
+static bool callValue(Value callee, int argCount) {
+  // Because Lox is dynamically typed, there's nothing to prevent a user from
+  // writing bad code like:
+  //   var notAFunction = 123;
+  //   notAFunction();
+  // If that happens, the runtime needs to safely report an error and halt. So
+  // the first thing we do is check the type of the value that we're trying to
+  // call.
+  if (IS_OBJ(callee)) {
+    switch (OBJ_TYPE(callee)) {
+      case OBJ_FUNCTION:
+        return call(AS_FUNCTION(callee), argCount);
+      case OBJ_NATIVE: {
+        NativeFn native = AS_NATIVE(callee);
+        Value result = native(argCount, vm.stackTop - argCount);
+        vm.stackTop -= argCount + 1;
+        push(result);
+        return true;
+      }
+      default:
+        break; // Non-callable object type.
+    }
+  }
+  runtimeError("Can only call functions and classes.");
+  return false;
+}
+
 // Lox follows Ruby in that nil and false are falsey and every other value
 // behaves like true.
 static bool isFalsey(Value value) {
@@ -77,15 +161,23 @@ static void concatenate() {
 }
 
 static InterpretResult run() {
-#define READ_BYTE() (*vm.ip++)
-#define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
-#define READ_CONSTANT_LONG() \
-  (vm.ip += 3, \
-   vm.chunk->constants.values[vm.ip[-3] << 16 | vm.ip[-2] << 8 | vm.ip[-1]])
+  CallFrame* frame = &vm.frames[vm.frameCount - 1];
+
+#define READ_BYTE() (*frame->ip++)
+
+#define READ_SHORT() \
+  (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
+
+#define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
+
+#define READ_CONSTANT_LONG()                                    \
+  (frame->ip += 3,                                              \
+  frame->function->chunk.constants.values                      \
+    [frame->ip[-3] << 16 | frame->ip[-2] << 8 | frame->ip[-1]])
+
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 #define READ_STRING_LONG() AS_STRING(READ_CONSTANT_LONG())
-#define READ_SHORT() \
-  (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
+
 // When the operands themselves are calculated, the left is evaluated first,
 // then the right. That means the left operand gets pushed before the right
 // operand. SO the right operand will be on the top of the stack. Thus, the
@@ -110,7 +202,8 @@ static InterpretResult run() {
       printf(" ]");
     }
     printf("\n");
-    disassembleInstruction(vm.chunk, vm.ip - vm.chunk->code);
+    disassembleInstruction(&frame->function->chunk,
+        (int)(frame->ip - frame->function->chunk.code));
 #endif
 
     uint8_t instruction;
@@ -134,7 +227,7 @@ static InterpretResult run() {
         // The other bytecode instructions only look for data at the top of the
         // stack, so we need to push the local's value onto the stack even
         // though it's already on the stack lower down somewhere.
-        push(vm.stack[slot]);
+        push(frame->slots[slot]);
         break;
       }
       case OP_SET_LOCAL: {
@@ -142,7 +235,7 @@ static InterpretResult run() {
         // Assignment is an expression, and every expression produces a value.
         // The value of an assignment expression is the assigned value itself,
         // so the VM just leaves the value on the stack.
-        vm.stack[slot] = peek(0);
+        frame->slots[slot] = peek(0);
         break;
       }
       case OP_GET_GLOBAL: {
@@ -244,22 +337,53 @@ static InterpretResult run() {
       }
       case OP_JUMP: {
         uint16_t offset = READ_SHORT();
-        vm.ip += offset;
+        frame->ip += offset;
         break;
       }
       case OP_JUMP_IF_FALSE: {
         uint16_t offset = READ_SHORT();
-        if (isFalsey(peek(0))) vm.ip += offset;
+        if (isFalsey(peek(0))) frame->ip += offset;
         break;
       }
       case OP_LOOP: {
         uint16_t offset = READ_SHORT();
-        vm.ip -= offset;
+        frame->ip -= offset;
+        break;
+      }
+      case OP_CALL: {
+        int argCount = READ_BYTE();
+        if (!callValue(peek(argCount), argCount)) {
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        // If callValue() is successful, there will be a new frame on the
+        // CallFrame stack for the called function. The run() function has its
+        // own cached pointer to the current frame, so we need to update that.
+        // Since the bytecode dispatch loop reads from the frame variable, when
+        // the VM goes to execute the next instruction, it will read the ip from
+        // the newly called function's CallFrame and jump to its code.
+        frame = &vm.frames[vm.frameCount - 1];
         break;
       }
       case OP_RETURN: {
-        // Exit interpreter.
-        return INTERPRET_OK;
+        Value result = pop();
+        vm.frameCount--;
+        if (vm.frameCount == 0) {
+          pop();
+          return INTERPRET_OK;
+        }
+
+        // Discards all of the slots the callee was using for its parameters and
+        // local variables. That includes the same slots the caller used to pass
+        // the arguments. Now that the call is done, the caller doesn't need
+        // them anymore. This means the top of the stack ends up right at the
+        // beginning of the returning function's stack window.
+        vm.stackTop = frame->slots;
+        push(result);
+        // On the next iteration of the bytecode dispatch loop, execution will
+        // jump back to the caller, right where it left off, immediately after
+        // the OP_CALL instruction.
+        frame = &vm.frames[vm.frameCount - 1];
+        break;
       }
     }
   }
@@ -273,19 +397,11 @@ static InterpretResult run() {
 }
 
 InterpretResult interpret(const char* source) {
-  Chunk chunk;
-  initChunk(&chunk);
+  ObjFunction* function = compile(source);
+  if (function == NULL) return INTERPRET_COMPILE_ERROR;
 
-  if (!compile(source, &chunk)) {
-    freeChunk(&chunk);
-    return INTERPRET_COMPILE_ERROR;
-  }
+  push(OBJ_VAL(function));
+  call(function, 0);
 
-  vm.chunk = &chunk;
-  vm.ip = vm.chunk->code;
-
-  InterpretResult result = run();
-
-  freeChunk(&chunk);
-  return result;
+  return run();
 }

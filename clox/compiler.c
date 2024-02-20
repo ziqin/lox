@@ -7,6 +7,7 @@
 #include "chunk.h"
 #include "common.h"
 #include "compiler.h"
+#include "object.h"
 #include "scanner.h"
 
 #ifdef DEBUG_PRINT_CODE
@@ -48,7 +49,25 @@ typedef struct {
   int depth;
 } Local;
 
-typedef struct {
+typedef enum {
+  TYPE_FUNCTION,
+  TYPE_SCRIPT
+} FunctionType;
+
+typedef struct Compiler {
+  // A linked list as a stack of the series of nested Compilers structs.
+  // Each Compiler points back to the Compiler for the function that encloses
+  // it, all the way back to the root Compiler for the top-level code.
+  // The linked list of Compilers threads through the C stack. Using the native
+  // stack for Compiler structs does mean our compiler has a practical limit on
+  // how deeply nested function declarations can be. Go too far and you could
+  // overflow the C stack. If we want the compiler to be more robust against
+  // pathological or even malicious code, it would be good to have our compiler
+  // artificially limit the amount of function nesting it permits.
+  struct Compiler* enclosing;
+  ObjFunction* function;
+  FunctionType type;
+
   // A hard limit on the number of locals that can be in scope at once.
   Local locals[UINT8_COUNT];
   // Tracks how many locals are in scope.
@@ -59,10 +78,9 @@ typedef struct {
 
 static Parser parser;
 static Compiler* current = NULL;
-static Chunk* compilingChunk;
 
 static Chunk* currentChunk() {
-  return compilingChunk;
+  return &current->function->chunk;
 }
 
 static void errorAt(Token* token, const char* message) {
@@ -175,6 +193,7 @@ static void emitByteWith24bitIndex(uint8_t byte, int index) {
 }
 
 static void emitReturn() {
+  emitByte(OP_NIL);
   emitByte(OP_RETURN);
 }
 
@@ -196,19 +215,43 @@ static void emitConstant(Value value) {
   }
 }
 
-static void initCompiler(Compiler* compiler) {
+static void initCompiler(Compiler* compiler, FunctionType type) {
+  compiler->enclosing = current;
+  compiler->function = NULL;
+  compiler->type = type;
   compiler->localCount = 0;
   compiler->scopeDepth = 0;
+  compiler->function = newFunction();
   current = compiler;
+  if (type != TYPE_SCRIPT) {
+    // The lexeme points directly into the original source code string, which
+    // may get freed once the code is finished compiling. The function object we
+    // create in the compiler outlives the compiler and persists until runtime.
+    // So it needs its own heap-allocated name string that it can keep around.
+    current->function->name = copyString(parser.previous.start,
+                                         parser.previous.length);
+  }
+
+  // The compiler implicitly claims stack slot 0 for the VM's own internal use.
+  Local* local = &current->locals[current->localCount++];
+  local->depth = 0;
+  local->name.start = "";
+  local->name.length = 0;
 }
 
-static void endCompiler() {
+static ObjFunction* endCompiler() {
   emitReturn();
+  ObjFunction* function = current->function;
+
 #ifdef DEBUG_PRINT_CODE
   if (!parser.hadError) {
-    disassembleChunk(currentChunk(), "code");
+    disassembleChunk(currentChunk(), function->name != NULL
+        ? function->name->chars : "<script>");
   }
 #endif
+
+  current = current->enclosing;
+  return function;
 }
 
 static void beginScope() {
@@ -306,6 +349,7 @@ static int parseVariable(const char* errorMessage) {
 }
 
 static void markInitialized() {
+  if (current->scopeDepth == 0) return;
   current->locals[current->localCount - 1].depth = current->scopeDepth;
 }
 
@@ -325,6 +369,23 @@ static void defineVariable(int global) {
   } else {
     emitByteWith24bitIndex(OP_DEFINE_GLOBAL_LONG, global);
   }
+}
+
+static uint8_t argumentList() {
+  uint8_t argCount = 0;
+  if (!check(TOKEN_RIGHT_PAREN)) {
+    do {
+      expression();
+      // Since we stuff the argument count into the bytecode as a single-byte
+      // operand, we can only go up to 255.
+      if (argCount == 255) {
+        error("Can't have more than 255 arguments.");
+      }
+      argCount++;
+    } while (match(TOKEN_COMMA));
+  }
+  consume(TOKEN_RIGHT_PAREN, "Expect ')' after arguments.");
+  return argCount;
 }
 
 static void and_(bool UNUSED(canAssign)) {
@@ -369,6 +430,16 @@ static void binary(bool UNUSED(canAssign)) {
     case TOKEN_SLASH:         emitByte(OP_DIVIDE); break;
     default: return; // Unreachable.
   }
+}
+
+// A function call expression is kind of an infix ( operator. You have a
+// high-precedence expression on the left for the thing being called---usually
+// just a single identifier. Then the ( in the middle, followed by the argument
+// expressions separated by commas, and a final ) to wrap it up at the end.
+static void call(bool UNUSED(canAssign)) {
+  // We've already consumed the ( token.
+  uint8_t argCount = argumentList();
+  emitBytes(OP_CALL, argCount);
 }
 
 static void literal(bool UNUSED(canAssign)) {
@@ -457,7 +528,7 @@ static void unary(bool UNUSED(canAssign)) {
 }
 
 static const ParseRule rules[] = {
-  [TOKEN_LEFT_PAREN]    = {grouping, NULL,   PREC_NONE},
+  [TOKEN_LEFT_PAREN]    = {grouping, call,   PREC_CALL},
   [TOKEN_RIGHT_PAREN]   = {NULL,     NULL,   PREC_NONE},
   [TOKEN_LEFT_BRACE]    = {NULL,     NULL,   PREC_NONE},
   [TOKEN_RIGHT_BRACE]   = {NULL,     NULL,   PREC_NONE},
@@ -552,6 +623,48 @@ static void block() {
   }
 
   consume(TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+}
+
+static void function(FunctionType type) {
+  Compiler compiler;
+  initCompiler(&compiler, type);
+  // This beginScope() doesn't have a corresponding endScope() call. Because we
+  // end Compiler completely when we reach the end of the function body, there's
+  // no need to close the lingering outermost scope.
+  beginScope();
+
+  consume(TOKEN_LEFT_PAREN, "Expect '(' after function name.");
+  if (!check(TOKEN_RIGHT_PAREN)) {
+    do {
+      current->function->arity++;
+      if (current->function->arity > 255) {
+        errorAtCurrent("Can't have more than 255 parameters.");
+      }
+      uint8_t constant = parseVariable("Expect parameter name.");
+      defineVariable(constant);
+    } while (match(TOKEN_COMMA));
+  }
+  consume(TOKEN_RIGHT_PAREN, "Expect ')' after parameters.");
+  consume(TOKEN_LEFT_BRACE, "Expect '{' before function body.");
+  block();
+
+  ObjFunction* function = endCompiler();
+  emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+}
+
+static void funDeclaration() {
+  // A function declaration at the top level will bind the function to a global
+  // variable. Inside a block or other function, a function declaration creates
+  // a local variable.
+  uint8_t global = parseVariable("Expect function name.");
+  // It's safe for a function to refer to its own name inside its body. You
+  // can't call the function and execute the body until after it's fully
+  // defined, so you'll never see the variable in an unintialized state.
+  // Practiacally speaking, it's useful to allow this in order to support
+  // recursive local functions.
+  markInitialized();
+  function(TYPE_FUNCTION);
+  defineVariable(global);
 }
 
 static void varDeclaration() {
@@ -651,6 +764,21 @@ static void printStatement() {
   emitByte(OP_PRINT);
 }
 
+static void returnStatement() {
+  if (current->type == TYPE_SCRIPT) {
+    error("Can't return from top-level code.");
+  }
+
+  if (match(TOKEN_SEMICOLON)) {
+    // If there is no return value, the statement implicitly returns nil.
+    emitReturn();
+  } else {
+    expression();
+    consume(TOKEN_SEMICOLON, "Expect ';' after return value.");
+    emitByte(OP_RETURN);
+  }
+}
+
 static void whileStatement() {
   // Record the offset in the bytecode right before the condition expression
   // we're about to compile.
@@ -697,10 +825,13 @@ static void synchronize() {
   }
 }
 
-// declaration -> varDecl
+// declaration -> funDecl
+//              | varDecl
 //              | statement ;
 static void declaration() {
-  if (match(TOKEN_VAR)) {
+  if (match(TOKEN_FUN)) {
+    funDeclaration();
+  } else if (match(TOKEN_VAR)) {
     varDeclaration();
   } else {
     statement();
@@ -712,6 +843,7 @@ static void declaration() {
 // statement -> exprStmt
 //            | printStmt
 //            | ifStmt
+//            | returnStmt
 //            | whileStmt
 //            | forStmt
 //            | block ;
@@ -722,6 +854,8 @@ static void statement() {
     forStatement();
   } else if (match(TOKEN_IF)) {
     ifStatement();
+  } else if (match(TOKEN_RETURN)) {
+    returnStatement();
   } else if (match(TOKEN_WHILE)) {
     whileStatement();
   } else if (match(TOKEN_LEFT_BRACE)) {
@@ -733,11 +867,10 @@ static void statement() {
   }
 }
 
-bool compile(const char* source, Chunk* chunk) {
+ObjFunction* compile(const char* source) {
   initScanner(source);
   Compiler compiler;
-  initCompiler(&compiler);
-  compilingChunk = chunk;
+  initCompiler(&compiler, TYPE_SCRIPT);
 
   parser.hadError = false;
   parser.panicMode = false;
@@ -748,6 +881,6 @@ bool compile(const char* source, Chunk* chunk) {
     declaration();
   }
 
-  endCompiler();
-  return !parser.hadError;
+  ObjFunction* function = endCompiler();
+  return parser.hadError ? NULL : function;
 }

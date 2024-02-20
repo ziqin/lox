@@ -4,6 +4,7 @@
 #include "vm.h"
 #include "object.h"
 
-bool compile(const char* source, Chunk* chunk);
+// By returning NULL we signal an error
+ObjFunction* compile(const char* source);
 
 #endif

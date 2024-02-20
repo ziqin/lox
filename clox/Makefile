@@ -27,7 +27,7 @@ value.h: common.h
 
 vm.o: common.h compiler.h debug.h object.h memory.h vm.h
 
-vm.h: chunk.h table.h value.h
+vm.h: chunk.h object.h table.h value.h
 	@touch $@
 
 compiler.o: common.h compiler.h scanner.h
@@ -37,9 +37,9 @@ compiler.h: vm.h object.h
 
 scanner.o: common.h scanner.h
 
-object.o: memory.h object.h table.h value.h vm.h
+object.o: chunk.h memory.h object.h table.h value.h vm.h
 
-object.h: common.h value.h
+object.h: common.h chunk.h value.h
 	@touch $@
 
 table.o: memory.h object.h table.h value.h
