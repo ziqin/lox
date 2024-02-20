@@ -54,13 +54,13 @@ void runtimeError(const char* format, ...) {
   resetStack();
 }
 
-static void defineNative(const char* name, NativeFn function) {
+static void defineNative(const char* name, NativeFn function, int arity) {
   // Both copyString() and newNative() dynamically allocate memory. That means
   // they can potentially trigger a collection. By storing them on the value
   // stack, we ensure the collector knows we're not done with the name and
   // ObjFunction so that it doesn't free them out from under us.
   push(OBJ_VAL(copyString(name, (int)strlen(name))));
-  push(OBJ_VAL(newNative(function)));
+  push(OBJ_VAL(newNative(function, arity)));
   tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
   pop();
   pop();
@@ -72,7 +72,7 @@ void initVM() {
   initTable(&vm.globals);
   initTable(&vm.strings);
 
-  defineNative("clock", clockNative);
+  defineNative("clock", clockNative, 0);
 }
 
 void freeVM() {
@@ -120,6 +120,18 @@ static bool call(ObjFunction* function, int argCount) {
   return true;
 }
 
+static bool callNative(ObjNative* native, int argCount) {
+  if (argCount != native->arity) {
+    runtimeError("Expected %d arguments but got %d.", native->arity, argCount);
+    return false;
+  }
+  NativeFn nativeFn = native->function;
+  Value result = nativeFn(argCount, vm.stackTop - argCount);
+  vm.stackTop -= argCount + 1;
+  push(result);
+  return true;
+}
+
 static bool callValue(Value callee, int argCount) {
   // Because Lox is dynamically typed, there's nothing to prevent a user from
   // writing bad code like:
@@ -132,13 +144,8 @@ static bool callValue(Value callee, int argCount) {
     switch (OBJ_TYPE(callee)) {
       case OBJ_FUNCTION:
         return call(AS_FUNCTION(callee), argCount);
-      case OBJ_NATIVE: {
-        NativeFn native = AS_NATIVE(callee);
-        Value result = native(argCount, vm.stackTop - argCount);
-        vm.stackTop -= argCount + 1;
-        push(result);
-        return true;
-      }
+      case OBJ_NATIVE:
+        return callNative(AS_NATIVE(callee), argCount);
       default:
         break; // Non-callable object type.
     }
