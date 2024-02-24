@@ -398,6 +398,7 @@ static InterpretResult run() {
 #undef READ_BYTE
 #undef READ_SHORT
 #undef READ_CONSTANT
+#undef READ_CONSTANT_LONG
 #undef READ_STRING
 #undef READ_STRING_LONG
 #undef BINARY_OP
