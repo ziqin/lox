@@ -649,7 +649,12 @@ static void function(FunctionType type) {
   block();
 
   ObjFunction* function = endCompiler();
-  emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+  int constant = makeConstant(OBJ_VAL(function));
+  if (constant <= UINT8_MAX) {
+    emitBytes(OP_CONSTANT, (uint8_t)constant);
+  } else {
+    emitByteWith24bitIndex(OP_CONSTANT_LONG, constant);
+  }
 }
 
 static void funDeclaration() {
