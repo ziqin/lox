@@ -177,13 +177,7 @@ static InterpretResult run() {
 
 #define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
 
-#define READ_CONSTANT_LONG()                                    \
-  (frame->ip += 3,                                              \
-  frame->function->chunk.constants.values                      \
-    [frame->ip[-3] << 16 | frame->ip[-2] << 8 | frame->ip[-1]])
-
 #define READ_STRING() AS_STRING(READ_CONSTANT())
-#define READ_STRING_LONG() AS_STRING(READ_CONSTANT_LONG())
 
 // When the operands themselves are calculated, the left is evaluated first,
 // then the right. That means the left operand gets pushed before the right
@@ -220,11 +214,6 @@ static InterpretResult run() {
         push(constant);
         break;
       }
-      case OP_CONSTANT_LONG: {
-        Value constant = READ_CONSTANT_LONG();
-        push(constant);
-        break;
-      }
       case OP_NIL:      push(NIL_VAL); break;
       case OP_TRUE:     push(BOOL_VAL(true)); break;
       case OP_FALSE:    push(BOOL_VAL(false)); break;
@@ -255,16 +244,6 @@ static InterpretResult run() {
         push(value);
         break;
       }
-      case OP_GET_GLOBAL_LONG: {
-        ObjString* name = READ_STRING_LONG();
-        Value value;
-        if (!tableGet(&vm.globals, name, &value)) {
-          runtimeError("Undefined variable '%s'.", name->chars);
-          return INTERPRET_RUNTIME_ERROR;
-        }
-        push(value);
-        break;
-      }
       // Note that we don't pop the value until after we add it to the hash
       // table. That ensures the VM can still find the value if a garbage
       // collection is triggered right in the middle of adding it to the hash
@@ -276,12 +255,6 @@ static InterpretResult run() {
         pop();
         break;
       }
-      case OP_DEFINE_GLOBAL_LONG: {
-        ObjString* name = READ_STRING_LONG();
-        tableSet(&vm.globals, name, peek(0));
-        pop();
-        break;
-      }
       // The call to tableSet() stores the value in the global variable table
       // even if the variable wasn't previously defined. That fact is visible in
       // a REPL session, since it keeps running even after the runtime error is
@@ -289,15 +262,6 @@ static InterpretResult run() {
       // table.
       case OP_SET_GLOBAL: {
         ObjString* name = READ_STRING();
-        if (tableSet(&vm.globals, name, peek(0))) {
-          tableDelete(&vm.globals, name);
-          runtimeError("Undefined variables '%s'.", name->chars);
-          return INTERPRET_RUNTIME_ERROR;
-        }
-        break;
-      }
-      case OP_SET_GLOBAL_LONG: {
-        ObjString* name = READ_STRING_LONG();
         if (tableSet(&vm.globals, name, peek(0))) {
           tableDelete(&vm.globals, name);
           runtimeError("Undefined variables '%s'.", name->chars);
@@ -398,9 +362,7 @@ static InterpretResult run() {
 #undef READ_BYTE
 #undef READ_SHORT
 #undef READ_CONSTANT
-#undef READ_CONSTANT_LONG
 #undef READ_STRING
-#undef READ_STRING_LONG
 #undef BINARY_OP
 }
 

@@ -1,5 +1,4 @@
 #include <inttypes.h>
-#include <assert.h>
 #include <stdio.h>
 
 #include "chunk.h"
@@ -24,19 +23,6 @@ static int constantInstruction(const char* name, const Chunk* chunk,
   printValue(chunk->constants.values[constant]);
   printf("'\n");
   return offset + 2;
-}
-
-// Prints out the name of the opcode, prints the constant index from the
-// subsequent byte in the chunk, and displays the actual constant value.
-// Returns the byte offset of the next instruction.
-static int constantInstructionLong(const char* name, const Chunk* chunk,
-    int offset) {
-  uint8_t* operand = &chunk->code[offset + 1];
-  uint32_t constant = (operand[0] << 16) | (operand[1] << 8) | operand[2];
-  printf("%-16s %4" PRIu32 " '", name, constant);
-  printValue(chunk->constants.values[constant]);
-  printf("'\n");
-  return offset + 4;
 }
 
 // Prints the name of the opcode.
@@ -76,8 +62,6 @@ int disassembleInstruction(const Chunk* chunk, int offset) {
   switch (instruction) {
     case OP_CONSTANT:
       return constantInstruction("OP_CONSTANT", chunk, offset);
-    case OP_CONSTANT_LONG:
-      return constantInstructionLong("OP_CONSTANT_LONG", chunk, offset);
     case OP_NIL:
       return simpleInstruction("OP_NIL", offset);
     case OP_TRUE:
@@ -92,16 +76,10 @@ int disassembleInstruction(const Chunk* chunk, int offset) {
       return byteInstruction("OP_SET_LOCAL", chunk, offset);
     case OP_GET_GLOBAL:
       return constantInstruction("OP_GET_GLOBAL", chunk, offset);
-    case OP_GET_GLOBAL_LONG:
-      return constantInstructionLong("OP_GET_GLOBAL_LONG", chunk, offset);
     case OP_DEFINE_GLOBAL:
       return constantInstruction("OP_DEFINE_GLOBAL", chunk, offset);
-    case OP_DEFINE_GLOBAL_LONG:
-      return constantInstructionLong("OP_DEFINE_GLOBAL_LONG", chunk, offset);
     case OP_SET_GLOBAL:
       return constantInstruction("OP_SET_GLOBAL", chunk, offset);
-    case OP_SET_GLOBAL_LONG:
-      return constantInstructionLong("OP_SET_GLOBAL_LONG", chunk, offset);
     case OP_EQUAL:
       return simpleInstruction("OP_EQUAL", offset);
     case OP_GREATER:

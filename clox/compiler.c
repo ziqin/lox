@@ -183,21 +183,12 @@ static void patchJump(int offset) {
   currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
-static void emitByteWith24bitIndex(uint8_t byte, int index) {
-  assert(index <= 0xffffff);
-  emitByte(byte);
-  // Big endian.
-  emitByte((uint8_t)((index & 0xff0000) >> 16));
-  emitByte((uint8_t)((index & 0x00ff00) >> 8));
-  emitByte((uint8_t)(index & 0x0000ff));
-}
-
 static void emitReturn() {
   emitByte(OP_NIL);
   emitByte(OP_RETURN);
 }
 
-static int makeConstant(Value value) {
+static uint8_t makeConstant(Value value) {
   int constant = addConstant(currentChunk(), value);
   if (constant > 0xffffff) {
     error("Too many constants in one chunk.");
@@ -207,12 +198,8 @@ static int makeConstant(Value value) {
 }
 
 static void emitConstant(Value value) {
-  int constant = makeConstant(value);
-  if (constant <= UINT8_MAX) {
-    emitBytes(OP_CONSTANT, (uint8_t)constant);
-  } else {
-    emitByteWith24bitIndex(OP_CONSTANT_LONG, constant);
-  }
+  uint8_t constant = makeConstant(value);
+  emitBytes(OP_CONSTANT, constant);
 }
 
 static void initCompiler(Compiler* compiler, FunctionType type) {
@@ -278,7 +265,7 @@ static void declaration();
 static const ParseRule* getRule(TokenType type);
 static void parsePrecedence(Precedence precedence);
 
-static int identifierConstant(const Token* name) {
+static uint8_t identifierConstant(const Token* name) {
   return makeConstant(OBJ_VAL(copyString(name->start, name->length)));
 }
 
@@ -339,7 +326,7 @@ static void declareVariable() {
 
 // Returns the index in the constant table for the name of a global variable, or
 // 0 as a dummy table index for a local variable.
-static int parseVariable(const char* errorMessage) {
+static uint8_t parseVariable(const char* errorMessage) {
   consume(TOKEN_IDENTIFIER, errorMessage);
 
   declareVariable();
@@ -353,7 +340,7 @@ static void markInitialized() {
   current->locals[current->localCount - 1].depth = current->scopeDepth;
 }
 
-static void defineVariable(int global) {
+static void defineVariable(uint8_t global) {
   // In a local scope, we don't need to emit code to store a local variable.
   // At runtime, the code for the variable's initializer (or the implicit nil if
   // the user omitted an initializer) has already been executed, and the value
@@ -364,11 +351,7 @@ static void defineVariable(int global) {
     return;
   }
 
-  if (global <= UINT8_MAX) {
-    emitBytes(OP_DEFINE_GLOBAL, (uint8_t)global);
-  } else {
-    emitByteWith24bitIndex(OP_DEFINE_GLOBAL_LONG, global);
-  }
+  emitBytes(OP_DEFINE_GLOBAL, global);
 }
 
 static uint8_t argumentList() {
@@ -479,34 +462,25 @@ static void string(bool UNUSED(canAssign)) {
           parser.previous.length - 2)));
 }
 
-static void emitBytesAdapter(uint8_t op, int arg) {
-  emitBytes(op, (uint8_t)arg);
-}
-
 static void namedVariable(Token name, bool canAssign) {
   uint8_t getOp, setOp;
-  void (*emit)(uint8_t, int) = emitBytesAdapter;
-  int arg = resolveLocal(current, &name);
-  if (arg != -1) {
+  uint8_t arg;
+  int resolved = resolveLocal(current, &name);
+  if (resolved != -1) {
+    arg = (uint8_t)resolved;
     getOp = OP_GET_LOCAL;
     setOp = OP_SET_LOCAL;
   } else {
     arg = identifierConstant(&name);
-    if (arg <= UINT8_MAX) {
-      getOp = OP_GET_GLOBAL;
-      setOp = OP_SET_GLOBAL;
-    } else {
-      getOp = OP_GET_GLOBAL_LONG;
-      setOp = OP_SET_GLOBAL_LONG;
-      emit = emitByteWith24bitIndex;
-    }
+    getOp = OP_GET_GLOBAL;
+    setOp = OP_SET_GLOBAL;
   }
 
   if (canAssign && match(TOKEN_EQUAL)) {
     expression();
-    emit(setOp, arg);
+    emitBytes(setOp, arg);
   } else {
-    emit(getOp, arg);
+    emitBytes(getOp, arg);
   }
 }
 
@@ -649,12 +623,8 @@ static void function(FunctionType type) {
   block();
 
   ObjFunction* function = endCompiler();
-  int constant = makeConstant(OBJ_VAL(function));
-  if (constant <= UINT8_MAX) {
-    emitBytes(OP_CONSTANT, (uint8_t)constant);
-  } else {
-    emitByteWith24bitIndex(OP_CONSTANT_LONG, constant);
-  }
+  uint8_t constant = makeConstant(OBJ_VAL(function));
+  emitBytes(OP_CONSTANT, constant);
 }
 
 static void funDeclaration() {
@@ -673,7 +643,7 @@ static void funDeclaration() {
 }
 
 static void varDeclaration() {
-  int global = parseVariable("Expect variable name.");
+  uint8_t global = parseVariable("Expect variable name.");
 
   if (match(TOKEN_EQUAL)) {
     expression();
