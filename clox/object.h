@@ -7,10 +7,12 @@
 
 #define OBJ_TYPE(value)        (AS_OBJ(value)->type)
 
+#define IS_CLOSURE(value)      isObjType(value, OBJ_CLOSURE)
 #define IS_FUNCTION(value)     isObjType(value, OBJ_FUNCTION)
 #define IS_NATIVE(value)       isObjType(value, OBJ_NATIVE)
 #define IS_STRING(value)       isObjType(value, OBJ_STRING)
 
+#define AS_CLOSURE(value)      ((ObjClosure*)AS_OBJ(value))
 #define AS_FUNCTION(value)     ((ObjFunction*)AS_OBJ(value))
 #define AS_NATIVE(value)       ((ObjNative*)AS_OBJ(value))
 #define AS_STRING(value)       ((ObjString*)AS_OBJ(value))
@@ -20,9 +22,11 @@
 #define STRING_SIZE(length) (sizeof(ObjString) + sizeof(char[(length) + 1]))
 
 typedef enum {
+  OBJ_CLOSURE,
   OBJ_FUNCTION,
   OBJ_NATIVE,
   OBJ_STRING,
+  OBJ_UPVALUE,
 } ObjType;
 
 struct Obj {
@@ -30,9 +34,13 @@ struct Obj {
   struct Obj* next;
 };
 
+// ObjFunction objects are created by the front end during compilation. At
+// runtime, all the VM does is load the function object from a constant table
+// and bind it to a name.
 typedef struct {
   Obj obj;
   int arity;
+  int upvalueCount;
   Chunk chunk;
   ObjString* name;
 } ObjFunction;
@@ -53,10 +61,29 @@ struct ObjString {
   char chars[];
 };
 
+typedef struct ObjUpvalue {
+  Obj obj;
+  Value* location; // Points to the closed-over variable.
+  Value closed;
+  struct ObjUpvalue* next;
+} ObjUpvalue;
+
+typedef struct {
+  Obj obj;
+  ObjFunction* function;
+  ObjUpvalue** upvalues; // A dynamic array of pointers to upvalues.
+  int upvalueCount; // The count is redundant because it's also tracked by
+                    // ObjFunction, but GC may need to know the size of an
+                    // ObjClosure's upvalue array size after the closure's
+                    // corresponding ObjFunction has already been freed.
+} ObjClosure;
+
+ObjClosure* newClosure(ObjFunction* function);
 ObjFunction* newFunction();
 ObjNative* newNative(NativeFn function, int arity);
 ObjString* copyString(const char* chars, int length);
 ObjString* concatStrings(const ObjString* a, const ObjString* b);
+ObjUpvalue* newUpvalue(Value* slot);
 void printObject(Value value);
 
 static inline bool isObjType(Value value, ObjType type) {

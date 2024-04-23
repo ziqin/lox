@@ -15,7 +15,7 @@ memory.o: memory.h vm.h
 memory.h: common.h object.h
 	@touch $@
 
-debug.o: chunk.h debug.h value.h
+debug.o: chunk.h debug.h object.h value.h
 
 debug.h: chunk.h
 	@touch $@

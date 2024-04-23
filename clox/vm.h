@@ -10,7 +10,7 @@
 #define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
 
 typedef struct {
-  ObjFunction* function;
+  ObjClosure* closure;
   uint8_t* ip; // The caller stores its own ip. When we return from a function,
                // the VM will jump to the ip of the caller's CallFrame and
                // resume from there.
@@ -26,6 +26,7 @@ typedef struct {
   Value* stackTop; // Points to where the next value to be pushed will go.
   Table globals;
   Table strings;  // A set for string interning. The keys are all we care about.
+  ObjUpvalue* openUpvalues; // Head ptr to the ordered list of open upvalues.
   Obj* objects; // A linked list storing every Obj.
 } VM;
 
