@@ -10,7 +10,7 @@ chunk.o: chunk.h memory.h
 chunk.h: common.h value.h
 	@touch $@
 
-memory.o: memory.h vm.h
+memory.o: memory.h object.h vm.h
 
 memory.h: common.h object.h
 	@touch $@
@@ -25,12 +25,12 @@ value.o: object.h memory.h value.h
 value.h: common.h
 	@touch $@
 
-vm.o: common.h compiler.h debug.h object.h memory.h vm.h
+vm.o: chunk.h common.h compiler.h debug.h object.h memory.h vm.h
 
 vm.h: chunk.h object.h table.h value.h
 	@touch $@
 
-compiler.o: common.h compiler.h scanner.h
+compiler.o: chunk.h common.h compiler.h object.h scanner.h
 
 compiler.h: vm.h object.h
 	@touch $@
