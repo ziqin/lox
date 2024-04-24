@@ -27,7 +27,13 @@ typedef struct {
   Table globals;
   Table strings;  // A set for string interning. The keys are all we care about.
   ObjUpvalue* openUpvalues; // Head ptr to the ordered list of open upvalues.
+
+  size_t bytesAllocated;
+  size_t nextGC;
   Obj* objects; // A linked list storing every Obj.
+  int grayCount;
+  int grayCapacity;
+  Obj** grayStack;
 } VM;
 
 typedef enum {

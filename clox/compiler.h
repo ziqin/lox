@@ -6,5 +6,6 @@
 
 // By returning NULL we signal an error
 ObjFunction* compile(const char* source);
+void markCompilerRoots();
 
 #endif

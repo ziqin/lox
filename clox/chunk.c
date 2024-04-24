@@ -3,6 +3,7 @@
 
 #include "chunk.h"
 #include "memory.h"
+#include "vm.h"
 
 struct CodeLinePair {
   int offset; // The start of bytecode offset corresponding to the source line.
@@ -84,6 +85,8 @@ int getLine(const Chunk* chunk, int offset) {
 }
 
 int addConstant(Chunk* chunk, Value value) {
+  push(value);
   writeValueArray(&chunk->constants, value);
+  pop();
   return chunk->constants.count - 1;
 }

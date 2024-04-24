@@ -5,12 +5,12 @@ clox: main.o chunk.o memory.o debug.o value.o vm.o compiler.o scanner.o object.o
 
 main.o: common.h chunk.h debug.h vm.h
 
-chunk.o: chunk.h memory.h
+chunk.o: chunk.h memory.h vm.h
 
 chunk.h: common.h value.h
 	@touch $@
 
-memory.o: memory.h object.h vm.h
+memory.o: compiler.h memory.h object.h vm.h debug.h
 
 memory.h: common.h object.h
 	@touch $@
@@ -30,7 +30,7 @@ vm.o: chunk.h common.h compiler.h debug.h object.h memory.h vm.h
 vm.h: chunk.h object.h table.h value.h
 	@touch $@
 
-compiler.o: chunk.h common.h compiler.h object.h scanner.h
+compiler.o: chunk.h common.h compiler.h memory.h object.h scanner.h
 
 compiler.h: vm.h object.h
 	@touch $@

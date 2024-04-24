@@ -14,10 +14,16 @@
 static void* allocateObject(size_t size, ObjType type) {
   Obj* object = reallocate(NULL, 0, size);
   object->type = type;
+  object->isMarked = false;
 
   // Every time we allocate an Obj, we insert it in the list.
   object->next = vm.objects;
   vm.objects = object;
+
+#ifdef DEBUG_LOG_GC
+  printf("%p allocate %zu for %d\n", (void*)object, size, type);
+#endif
+
   return object;
 }
 
@@ -70,7 +76,11 @@ ObjString* copyString(const char* chars, int length) {
   string->hash = hash;
   memcpy(string->chars, chars, sizeof(char) * length);
   string->chars[length] = '\0';
+
+  push(OBJ_VAL(string));
   tableSet(&vm.strings, string, NIL_VAL);
+  pop();
+
   return string;
 }
 
@@ -92,7 +102,11 @@ ObjString* concatStrings(const ObjString* a, const ObjString* b) {
 
   result->length = length;
   result->chars[length] = '\0';
+
+  push(OBJ_VAL(result));
   tableSet(&vm.strings, result, NIL_VAL);
+  pop();
+
   return result;
 }
 
