@@ -39,7 +39,7 @@ scanner.o: common.h scanner.h
 
 object.o: chunk.h memory.h object.h table.h value.h vm.h
 
-object.h: common.h chunk.h value.h
+object.h: common.h chunk.h table.h value.h
 	@touch $@
 
 table.o: memory.h object.h table.h value.h
