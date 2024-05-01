@@ -26,6 +26,7 @@ typedef struct {
   Value* stackTop; // Points to where the next value to be pushed will go.
   Table globals;
   Table strings;  // A set for string interning. The keys are all we care about.
+  ObjString* initString; // Take advantage of string interning to speed up init.
   ObjUpvalue* openUpvalues; // Head ptr to the ordered list of open upvalues.
 
   size_t bytesAllocated;

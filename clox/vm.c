@@ -80,12 +80,19 @@ void initVM() {
   initTable(&vm.globals);
   initTable(&vm.strings);
 
+  // Copying a string allocates memory, which can trigger a GC. If the collector
+  // ran at just the wrong time, it would read vm.initString before it had been
+  // initialized. So, first we zero the field out.
+  vm.initString = NULL;
+  vm.initString = copyString("init", 4);
+
   defineNative("clock", clockNative, 0);
 }
 
 void freeVM() {
   freeTable(&vm.globals);
   freeTable(&vm.strings);
+  vm.initString = NULL; // The next line will free it.
   freeObjects();
 }
 
@@ -150,9 +157,25 @@ static bool callValue(Value callee, int argCount) {
   // call.
   if (IS_OBJ(callee)) {
     switch (OBJ_TYPE(callee)) {
+      case OBJ_BOUND_METHOD: {
+        ObjBoundMethod* bound = AS_BOUND_METHOD(callee);
+        vm.stackTop[-argCount - 1] = bound->receiver;
+        return call(bound->method, argCount);
+      }
       case OBJ_CLASS: {
         ObjClass* klass = AS_CLASS(callee);
         vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
+        Value initializer;
+        if (tableGet(&klass->methods, vm.initString, &initializer)) {
+          // The new CallFrame for the init() method shares the stack window
+          // with arguments passed to the class.
+          return call(AS_CLOSURE(initializer), argCount);
+        } else if (argCount != 0) {
+          // If there's no init() method, then it doesn't make any sense to pass
+          // arguments to the class when creating the instance.
+          runtimeError("Expected 0 arguments but got %d.", argCount);
+          return false;
+        }
         return true;
       }
       case OBJ_CLOSURE:
@@ -167,6 +190,59 @@ static bool callValue(Value callee, int argCount) {
   }
   runtimeError("Can only call functions and classes.");
   return false;
+}
+
+// First we look up the method by name in the class's method table. If we don't
+// find one, we report that runtime error and exit. Otherwise, we take the
+// method's closure and push a call to it onto the CallFrame stack.
+static bool invokeFromClass(const ObjClass* klass, const ObjString* name,
+                            int argCount) {
+  Value method;
+  if (!tableGet(&klass->methods, name, &method)) {
+    runtimeError("Undefined property '%s'.", name->chars);
+    return false;
+  }
+  return call(AS_CLOSURE(method), argCount);
+}
+
+// Returns true if the invocation succeeds. A false return means a runtime error
+// occurred.
+static bool invoke(const ObjString* name, int argCount) {
+  Value receiver = peek(argCount);
+
+  if (!IS_INSTANCE(receiver)) {
+    runtimeError("Only instances have methods.");
+    return false;
+  }
+
+  ObjInstance* instance = AS_INSTANCE(receiver);
+
+  // Invoking a field
+  Value value;
+  if (tableGet(&instance->fields, name, &value)) {
+    // Store the field in place of the receiver
+    vm.stackTop[-argCount - 1] = value;
+    return callValue(value, argCount);
+  }
+
+  // Invoking a method
+  return invokeFromClass(instance->klass, name, argCount);
+}
+
+// Places the method on the stack if found and returns true, otherwise returns
+// false to indicate a method with that name couldn't be found.
+static bool bindMethod(const ObjClass* klass, const ObjString* name) {
+  Value method;
+  if (!tableGet(&klass->methods, name, &method)) {
+    runtimeError("Undefined property '%s'.", name->chars);
+    return false;
+  }
+
+  ObjBoundMethod* bound = newBoundMethod(peek(0), AS_CLOSURE(method));
+
+  pop();
+  push(OBJ_VAL(bound));
+  return true;
 }
 
 static ObjUpvalue* captureUpvalue(Value* local) {
@@ -212,6 +288,15 @@ static void closeUpvalues(Value* last) {
                                           // to both open and closed upvalues.
     vm.openUpvalues = upvalue->next;
   }
+}
+
+static void defineMethod(ObjString* name) {
+  // When we execute each OP_METHOD instruction, the stack has the method's
+  // closure on top, above the class it will be bound to.
+  Value method = peek(0);
+  ObjClass* klass = AS_CLASS(peek(1));
+  tableSet(&klass->methods, name, method);
+  pop();
 }
 
 // Lox follows Ruby in that nil and false are falsey and every other value
@@ -353,13 +438,16 @@ static InterpretResult run() {
 
         Value value;
         if (tableGet(&instance->fields, name, &value)) {
-          pop();
+          pop(); // Instance.
           push(value);
           break;
         }
 
-        runtimeError("Undefined property '%s'.", name->chars);
-        return INTERPRET_RUNTIME_ERROR;
+        // Fields take priority over and shadow methods.
+        if (!bindMethod(instance->klass, name)) {
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        break;
       }
       case OP_SET_PROPERTY: {
         if (!IS_INSTANCE(peek(1))) {
@@ -444,6 +532,15 @@ static InterpretResult run() {
         frame = &vm.frames[vm.frameCount - 1];
         break;
       }
+      case OP_INVOKE: {
+        ObjString* method = READ_STRING();
+        int argCount = READ_BYTE();
+        if (!invoke(method, argCount)) {
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        frame = &vm.frames[vm.frameCount - 1];
+        break;
+      }
       case OP_CLOSURE: {
         ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
         ObjClosure* closure = newClosure(function);
@@ -493,6 +590,9 @@ static InterpretResult run() {
       }
       case OP_CLASS:
         push(OBJ_VAL(newClass(READ_STRING())));
+        break;
+      case OP_METHOD:
+        defineMethod(READ_STRING());
         break;
     }
   }
