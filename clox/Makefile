@@ -1,4 +1,4 @@
-CFLAGS=-std=c11 -Wall -Wextra -Werror
+CFLAGS=-std=c11 -Wall -Wextra -Werror -O2
 
 clox: main.o chunk.o memory.o debug.o value.o vm.o compiler.o scanner.o object.o table.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
