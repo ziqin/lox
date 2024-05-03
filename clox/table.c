@@ -22,7 +22,11 @@ void freeTable(Table* table) {
 // Returns an empty bucket with key being NULL, or a bucket with the same key as
 // the one we're looking for.
 static Entry* findEntry(Entry* entries, int capacity, const ObjString* key) {
-  uint32_t index = key->hash % capacity;
+  // Intention: uint32_t index = key->hash % capacity;
+  // Since the array starts out at eight elements and grows by a factor of two
+  // each time, the table's size is always a power of two.
+  uint32_t index = key->hash & (capacity - 1);
+
   // The first time we pass a tombstone, we store it in this local variable.
   Entry* tombstone = NULL;
 
@@ -48,7 +52,8 @@ static Entry* findEntry(Entry* entries, int capacity, const ObjString* key) {
       return entry;
     }
 
-    index = (index + 1) % capacity;
+    // Intention: index = (index + 1) % capacity;
+    index = (index + 1) & (capacity - 1);
   }
 }
 
@@ -133,7 +138,8 @@ ObjString* tableFindString(const Table* table, const char* chars,
                            int length, uint32_t hash) {
   if (table->count == 0) return NULL;
 
-  uint32_t index = hash % table->capacity;
+  // Intention: uint32_t index = hash % table->capacity;
+  uint32_t index = hash & (table->capacity - 1);
   for (;;) {
     Entry* entry = &table->entries[index];
     if (entry->key == NULL) {
@@ -146,7 +152,8 @@ ObjString* tableFindString(const Table* table, const char* chars,
       return entry->key;
     }
 
-    index = (index + 1) % table->capacity;
+    // Intention: index = (index + 1) % table->capacity;
+    index = (index + 1) & (table->capacity - 1);
   }
 }
 
