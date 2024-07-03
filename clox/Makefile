@@ -49,4 +49,4 @@ table.h: common.h value.h
 
 .PHONY: clean
 clean:
-	rm -rf *.o
+	rm -f *.o clox
