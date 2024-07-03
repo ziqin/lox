@@ -3,50 +3,50 @@ CFLAGS=-std=c11 -Wall -Wextra -Werror -O2
 clox: main.o chunk.o memory.o debug.o value.o vm.o compiler.o scanner.o object.o table.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-main.o: common.h chunk.h.gch debug.h.gch vm.h.gch
+main.o: common.h chunk.h debug.h vm.h
 
-chunk.o: chunk.h.gch memory.h.gch vm.h.gch
+chunk.o: chunk.h memory.h vm.h
 
-chunk.h.gch: chunk.h common.h value.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+chunk.h: common.h value.h
+	@touch $@
 
-memory.o: compiler.h.gch memory.h.gch object.h.gch vm.h.gch debug.h.gch
+memory.o: compiler.h memory.h object.h vm.h debug.h
 
-memory.h.gch: memory.h common.h object.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+memory.h: common.h object.h
+	@touch $@
 
-debug.o: chunk.h.gch debug.h.gch object.h.gch value.h.gch
+debug.o: chunk.h debug.h object.h value.h
 
-debug.h.gch: debug.h chunk.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+debug.h: chunk.h
+	@touch $@
 
-value.o: object.h.gch memory.h.gch value.h.gch
+value.o: object.h memory.h value.h
 
-value.h.gch: value.h common.h
-	$(CC) $(CFLAGS) -o $@ $<
+value.h: common.h
+	@touch $@
 
-vm.o: chunk.h.gch common.h compiler.h.gch debug.h.gch object.h.gch memory.h.gch vm.h.gch
+vm.o: chunk.h common.h compiler.h debug.h object.h memory.h vm.h
 
-vm.h.gch: vm.h chunk.h.gch object.h.gch table.h.gch value.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+vm.h: chunk.h object.h table.h value.h
+	@touch $@
 
-compiler.o: chunk.h.gch common.h compiler.h.gch memory.h.gch object.h.gch scanner.h
+compiler.o: chunk.h common.h compiler.h memory.h object.h scanner.h
 
-compiler.h.gch: compiler.h vm.h.gch object.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+compiler.h: vm.h object.h
+	@touch $@
 
 scanner.o: common.h scanner.h
 
-object.o: chunk.h.gch memory.h.gch object.h.gch table.h.gch value.h.gch vm.h.gch
+object.o: chunk.h memory.h object.h table.h value.h vm.h
 
-object.h.gch: object.h common.h chunk.h.gch table.h.gch value.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+object.h: common.h chunk.h table.h value.h
+	@touch $@
 
-table.o: memory.h.gch object.h.gch table.h.gch value.h.gch
+table.o: memory.h object.h table.h value.h
 
-table.h.gch: table.h common.h value.h.gch
-	$(CC) $(CFLAGS) -o $@ $<
+table.h: common.h value.h
+	@touch $@
 
 .PHONY: clean
 clean:
-	rm -f clox *.o *.gch
+	rm -rf *.o

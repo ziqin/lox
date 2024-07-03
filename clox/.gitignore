@@ -2,9 +2,6 @@
 clox
 *.exe
 
-# Precompiled headers
-*.gch
-
 # Object files
 *.o
 *.obj
