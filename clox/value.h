@@ -2,6 +2,7 @@
 #define clox_value_h
 
 #include "common.h"
+#include <string.h>
 
 typedef struct Obj Obj;
 typedef struct ObjString ObjString;
@@ -37,11 +38,15 @@ typedef uint64_t Value;
 #define OBJ_VAL(obj)    (Value)(SIGN_BIT | QNAN | (uint64_t)(uintptr_t)(obj))
 
 static inline double valueToNum(Value value) {
-  return *(double*)&value;
+  double num;
+  memcpy(&num, &value, sizeof(Value));
+  return num;
 }
 
 static inline Value numToValue(double num) {
-  return *(Value*)&num;
+  Value value;
+  memcpy(&value, &num, sizeof(double));
+  return value;
 }
 
 #else // NAN_BOXING
